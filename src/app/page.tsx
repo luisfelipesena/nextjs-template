@@ -1,31 +1,78 @@
-import { cn } from "@/lib/utils"
-import { RecentPost } from "./components/post"
+"use client"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { client } from "@/lib/client"
+import { SignedIn, SignedOut } from "@clerk/nextjs"
+import { useMutation, useQuery } from "@tanstack/react-query"
+import Link from "next/link"
+import { useState } from "react"
 
-export default async function Home() {
+export default function HomePage() {
+  const [content, setContent] = useState("")
+
+  const { data: post, refetch } = useQuery({
+    queryKey: ["post"],
+    queryFn: async () => {
+      const response = await client.post.recent.$get()
+      const json = await response.json()
+      return json
+    },
+  })
+
+  const { mutate: createNote, isPending } = useMutation({
+    mutationFn: (content: string) => client.post.create.$post({ name: content }),
+    onSuccess: () => {
+      setContent("")
+      refetch()
+    },
+  })
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!content.trim()) return
+    createNote(content)
+  }
+
   return (
-    <main className="flex min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 flex-col items-center justify-center relative isolate">
-      <div className="absolute inset-0 -z-10 opacity-50 mix-blend-soft-light bg-[url('/noise.svg')] [mask-image:radial-gradient(ellipse_at_center,black,transparent)]" />
-      <div className="container flex flex-col items-center justify-center gap-6 px-4 py-16">
-      <h1
-          className={cn(
-            "inline-flex tracking-tight flex-col gap-1 transition text-center",
-            "font-display text-4xl sm:text-5xl md:text-6xl font-semibold leading-none lg:text-[4rem]",
-            "bg-gradient-to-r from-20% bg-clip-text text-transparent",
-            "from-white to-gray-50"
-          )}
-        >
-          <span>JStack</span>
-        </h1>
+    <div className="flex min-h-screen flex-col items-center justify-center gap-8 p-4">
+      <h1 className="text-4xl font-bold">Welcome to Next.js Template</h1>
 
-        <p className="text-[#ececf399] text-lg/7 md:text-xl/8 text-pretty sm:text-wrap sm:text-center text-center mb-8">
-          The stack for building seriously fast, lightweight and{" "}
-          <span className="inline sm:block">
-            end-to-end typesafe Next.js apps.
-          </span>
-        </p>
+      <SignedIn>
+        <Link href="/dashboard" className="rounded-md bg-primary px-4 py-2 text-white hover:bg-primary/90">
+          Go to Dashboard
+        </Link>
+      </SignedIn>
 
-        <RecentPost />
+      <div className="w-full max-w-lg space-y-6">
+        <form onSubmit={handleSubmit} className="flex gap-2">
+          <Input
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="Write a note..."
+            className="flex-1"
+          />
+          <Button type="submit" disabled={isPending}>
+            {isPending ? "Adding..." : "Add Note"}
+          </Button>
+        </form>
       </div>
-    </main>
+
+      <div className="space-y-4">
+        <div key={post?.id} className="rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
+          <p>{post?.name}</p>
+        </div>
+      </div>
+
+      <SignedOut>
+        <div className="flex gap-4">
+          <Button variant="outline">
+            <Link href="/sign-in">Sign In</Link>
+          </Button>
+          <Button variant="outline">
+            <Link href="/sign-up">Sign Up</Link>
+          </Button>
+        </div>
+      </SignedOut>
+    </div>
   )
 }

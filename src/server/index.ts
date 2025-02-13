@@ -1,4 +1,4 @@
-import { j } from "./jstack"
+import { j } from "@/server/jstack"
 import { postRouter } from "./routers/post-router"
 
 /**
