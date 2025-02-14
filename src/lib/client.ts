@@ -1,4 +1,3 @@
-import { env } from "@/env"
 import type { AppRouter } from "@/server"
 import { createClient } from "jstack"
 
@@ -7,7 +6,7 @@ import { createClient } from "jstack"
  * @see https://jstack.app/docs/backend/api-client
  */
 
-const baseUrl = env.NEXT_PUBLIC_API_URL
+const baseUrl =  "/api"
 export const client = createClient<AppRouter>({
   baseUrl,
 })
