@@ -1,33 +1,44 @@
 'use client'
 
-import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { authClient } from '@/lib/auth-client'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { useAuth } from '@/hooks/use-auth'
+import { useState } from 'react'
+
+const signInSchema = z.object({
+  email: z.string().email('Please enter a valid email'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+})
+
+type SignInForm = z.infer<typeof signInSchema>
 
 export default function SignInPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const { signIn, isSigningIn } = useAuth()
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const { register, handleSubmit, formState: { errors } } = useForm<SignInForm>({
+    resolver: zodResolver(signInSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+    },
+  })
+
+  const onSubmit = (data: SignInForm) => {
     setError(null)
-    setLoading(true)
-
-    try {
-      await authClient.signIn.email({
-        email,
-        password,
-      })
-      router.push('/dashboard')
-    } catch (_err) {
-      setError('Invalid email or password')
-    } finally {
-      setLoading(false)
-    }
+    signIn(data, {
+      onSuccess: () => {
+        router.push('/dashboard')
+      },
+      onError: (error) => {
+        setError('Invalid email or password')
+        console.error('Sign in error:', error)
+      },
+    })
   }
 
   return (
@@ -43,7 +54,7 @@ export default function SignInPage() {
         </div>
 
         <div className='w-full mx-auto max-w-sm'>
-          <form onSubmit={handleSubmit} className='space-y-4'>
+          <form onSubmit={handleSubmit(onSubmit)} className='space-y-4'>
             <div className='space-y-2'>
               <label htmlFor='email' className='text-sm font-medium text-foreground'>
                 Email
@@ -51,11 +62,12 @@ export default function SignInPage() {
               <input
                 id='email'
                 type='email'
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                {...register('email')}
                 className='w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary'
-                required
               />
+              {errors.email && (
+                <p className='text-sm text-destructive'>{errors.email.message}</p>
+              )}
             </div>
 
             <div className='space-y-2'>
@@ -65,21 +77,22 @@ export default function SignInPage() {
               <input
                 id='password'
                 type='password'
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                {...register('password')}
                 className='w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary'
-                required
               />
+              {errors.password && (
+                <p className='text-sm text-destructive'>{errors.password.message}</p>
+              )}
             </div>
 
             {error && <p className='text-destructive text-sm'>{error}</p>}
 
             <button
               type='submit'
-              disabled={loading}
+              disabled={isSigningIn}
               className='w-full bg-primary text-primary-foreground py-2 px-4 rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed'
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {isSigningIn ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
         </div>

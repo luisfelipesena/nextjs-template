@@ -1,24 +1,19 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { authClient } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
-import { useEffect } from 'react'
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { user, loading, isAuthenticated } = useAuth()
+  const { user, loading, signOut, isSigningOut } = useAuth()
 
-  useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push('/sign-in')
-    }
-  }, [loading, isAuthenticated, router])
-
-  const handleSignOut = async () => {
-    await authClient.signOut()
-    router.push('/')
+  const handleSignOut = () => {
+    signOut(undefined, {
+      onSuccess: () => {
+        router.push('/')
+      },
+    })
   }
 
   if (loading) {
@@ -33,8 +28,12 @@ export default function DashboardPage() {
     <div className='p-4'>
       <div className='flex items-center justify-between'>
         <h1 className='text-2xl font-bold'>Dashboard</h1>
-        <Button onClick={handleSignOut} variant='outline'>
-          Sign Out
+        <Button 
+          onClick={handleSignOut} 
+          variant='outline'
+          disabled={isSigningOut}
+        >
+          {isSigningOut ? 'Signing out...' : 'Sign Out'}
         </Button>
       </div>
       <div className='mt-4'>

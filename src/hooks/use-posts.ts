@@ -1,60 +1,42 @@
-import { useState, useEffect } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { client } from '@/lib/client'
-
-interface Post {
-  id: number
-  name: string
-  createdAt: Date
-  updatedAt: Date
-}
 
 interface CreatePostInput {
   name: string
 }
 
 export function usePosts() {
-  const [recentPost, setRecentPost] = useState<Post | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
-  const fetchRecentPost = async () => {
-    try {
-      setLoading(true)
-      setError(null)
+  const { data: recentPost, isPending: loading, error } = useQuery({
+    queryKey: ['get-recent-post'],
+    queryFn: async () => {
       const res = await client.post.recent.$get()
-      const result = await res.json()
-      setRecentPost(result)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao carregar posts')
-    } finally {
-      setLoading(false)
-    }
-  }
+      return await res.json()
+    },
+  })
 
-  const createPost = async (input: CreatePostInput) => {
-    try {
-      setError(null)
+  const createPostMutation = useMutation({
+    mutationFn: async (input: CreatePostInput) => {
       const res = await client.post.create.$post(input)
-      const newPost = await res.json()
-      // Atualiza o post recente após criar um novo
-      await fetchRecentPost()
-      return newPost
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao criar post'
-      setError(errorMessage)
-      throw new Error(errorMessage)
-    }
-  }
+      return await res.json()
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['get-recent-post'] })
+    },
+  })
 
-  useEffect(() => {
-    fetchRecentPost()
-  }, [])
+  const refetch = () => {
+    return queryClient.invalidateQueries({ queryKey: ['get-recent-post'] })
+  }
 
   return {
     recentPost,
     loading,
-    error,
-    refetch: fetchRecentPost,
-    createPost,
+    error: error?.message || null,
+    refetch,
+    createPost: createPostMutation.mutate,
+    createPostAsync: createPostMutation.mutateAsync,
+    isCreating: createPostMutation.isPending,
   }
 }

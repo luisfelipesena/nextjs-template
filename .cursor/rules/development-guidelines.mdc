@@ -57,46 +57,145 @@ export default function DashboardPage() {
 }
 ```
 
-### 2. Padrão de Hooks Customizados
+### 2. Padrão de Hooks com React Query
 
-Todos os hooks devem seguir este padrão:
+**✅ SEMPRE USE React Query para gerenciamento de estado servidor**
+
+Todos os hooks devem usar React Query (TanStack Query):
 
 ```typescript
 // src/hooks/use-[resource].ts
-import { useState, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { client } from '@/lib/client'
 import type { Resource } from '@/types'
 
 export function useResource() {
-  const [data, setData] = useState<Resource | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
-  const fetchData = async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      const result = await client.resource.get()
-      setData(result)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro desconhecido')
-    } finally {
-      setLoading(false)
-    }
+  // Para queries (GET)
+  const { data, isPending: loading, error } = useQuery({
+    queryKey: ['get-resource'],
+    queryFn: async () => {
+      const res = await client.resource.get()
+      return await res.json()
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutos
+    refetchOnWindowFocus: false,
+  })
+
+  // Para mutations (POST/PUT/DELETE)
+  const { mutate: createResource, isPending: isCreating } = useMutation({
+    mutationFn: async (input: CreateResourceInput) => {
+      const res = await client.resource.create.$post(input)
+      return await res.json()
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['get-resource'] })
+    },
+  })
+
+  const refetch = () => {
+    return queryClient.invalidateQueries({ queryKey: ['get-resource'] })
   }
-
-  useEffect(() => {
-    fetchData()
-  }, [])
 
   return {
     data,
     loading,
-    error,
-    refetch: fetchData
+    error: error?.message || null,
+    refetch,
+    createResource,
+    isCreating,
   }
 }
 ```
+
+**Benefícios do React Query:**
+- Cache automático e invalidação inteligente
+- Background refetching
+- Retry automático em falhas
+- Loading e error states padronizados
+- Otimistic updates
+- Sincronização entre múltiplos componentes
+
+## Padrões de Formulários
+
+### 1. React Hook Form + Zod
+
+**✅ SEMPRE USE React Hook Form com Zod para validação**
+
+```typescript
+// Schema de validação
+const formSchema = z.object({
+  email: z.string().email('Please enter a valid email'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+})
+
+type FormData = z.infer<typeof formSchema>
+
+// No componente
+export function LoginForm() {
+  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+    },
+  })
+
+  const onSubmit = (data: FormData) => {
+    // lógica do submit
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <input {...register('email')} />
+      {errors.email && <p>{errors.email.message}</p>}
+      
+      <input {...register('password')} type="password" />
+      {errors.password && <p>{errors.password.message}</p>}
+      
+      <button type="submit">Submit</button>
+    </form>
+  )
+}
+```
+
+### 2. Integração com Hooks Customizados
+
+```typescript
+// Hook com mutations para formulários
+export function useAuth() {
+  const { mutate: signIn, isPending: isSigningIn } = useMutation({
+    mutationFn: async (input: SignInInput) => {
+      return await authClient.signIn.email(input)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['auth-session'] })
+    },
+  })
+
+  return { signIn, isSigningIn }
+}
+
+// No componente
+export function SignInForm() {
+  const { signIn, isSigningIn } = useAuth()
+  
+  const onSubmit = (data: SignInForm) => {
+    signIn(data, {
+      onSuccess: () => router.push('/dashboard'),
+      onError: (error) => setError('Invalid credentials'),
+    })
+  }
+}
+```
+
+**Benefícios do React Hook Form:**
+- Performance superior (menos re-renders)
+- Validação no client-side e server-side
+- TypeScript integration nativa
+- Fácil integração com libraries de UI
+- Validação em tempo real
 
 ### 3. Tipagem Forte
 
@@ -126,69 +225,91 @@ export const client = createJStackClient<Router>({
 
 ## Padrões de Autenticação
 
-### 1. Hook de Autenticação
+### 1. Hook de Autenticação com React Query
 
 ```typescript
 // src/hooks/use-auth.ts
-import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { authClient } from '@/lib/auth-client'
-import type { User } from 'better-auth/types'
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchSession = async () => {
+  const { data: user, isPending: loading } = useQuery({
+    queryKey: ['auth-session'],
+    queryFn: async () => {
       try {
         const session = await authClient.getSession()
-        if (session?.data?.user) {
-          setUser(session.data.user)
-        } else {
-          setUser(null)
-        }
+        return session?.data?.user || null
       } catch (_error) {
-        setUser(null)
-      } finally {
-        setLoading(false)
+        return null
       }
-    }
-
-    fetchSession()
-  }, [])
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutos
+    refetchOnWindowFocus: false,
+  })
 
   return { 
     user, 
     loading, 
-    isAuthenticated: !!user,
-    signOut: () => authClient.signOut()
+    isAuthenticated: !!user 
   }
 }
 ```
 
-### 2. Páginas Protegidas
+### 2. Proteção de Rotas com Middleware
+
+**✅ SEMPRE USE middleware para proteção de rotas**
 
 ```typescript
-// src/components/protected-route.tsx
-import { useAuth } from '@/hooks/use-auth'
-import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+// src/middleware.ts
+import { NextRequest, NextResponse } from "next/server"
+import { getSessionCookie } from "better-auth/cookies"
 
-export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth()
-  const router = useRouter()
+export async function middleware(request: NextRequest) {
+  const sessionCookie = getSessionCookie(request)
 
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push('/sign-in')
-    }
-  }, [user, loading, router])
+  // Rotas protegidas que requerem autenticação
+  const protectedRoutes = ['/dashboard']
+  const isProtectedRoute = protectedRoutes.some(route => 
+    request.nextUrl.pathname.startsWith(route)
+  )
 
-  if (loading) return <Loading />
-  if (!user) return null
+  // Rotas de autenticação que devem redirecionar se já autenticado
+  const authRoutes = ['/sign-in', '/sign-up']
+  const isAuthRoute = authRoutes.some(route => 
+    request.nextUrl.pathname.startsWith(route)
+  )
 
-  return <>{children}</>
+  if (isProtectedRoute && !sessionCookie) {
+    return NextResponse.redirect(new URL('/sign-in', request.url))
+  }
+
+  if (isAuthRoute && sessionCookie) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  return NextResponse.next()
 }
+
+export const config = {
+  matcher: [
+    '/dashboard/:path*',
+    '/sign-in',
+    '/sign-up'
+  ]
+}
+```
+
+**Configuração do Better Auth:**
+
+```typescript
+// src/lib/auth.ts
+import { betterAuth } from 'better-auth'
+import { nextCookies } from 'better-auth/next-js'
+
+export const auth = betterAuth({
+  // ...configurações
+  plugins: [nextCookies()] // Importante para Next.js
+})
 ```
 
 ## Padrões de Banco de Dados
@@ -426,10 +547,18 @@ npm run db:migrate
 
 ## Checklist de PR
 
-- [ ] Todos os hooks seguem o padrão estabelecido
+- [ ] Todos os hooks usam React Query (useQuery/useMutation)
 - [ ] Componentes não fazem fetch direto de APIs
+- [ ] Query keys são consistentes e bem definidas
+- [ ] Invalidação de cache implementada nas mutations
+- [ ] Formulários usam React Hook Form + Zod
+- [ ] Validação client-side implementada
+- [ ] Proteção de rotas implementada via middleware
+- [ ] nextCookies plugin configurado no Better Auth
 - [ ] Tipos TypeScript estão definidos
 - [ ] Tratamento de erro implementado
+- [ ] Loading states gerenciados pelo React Query
+- [ ] Estados de formulário gerenciados pelo React Hook Form
 - [ ] Testes unitários (se aplicável)
 - [ ] Documentação atualizada
 - [ ] Lint passa sem erros

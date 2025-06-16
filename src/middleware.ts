@@ -1,20 +1,26 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
-import { auth } from '@/lib/auth'
+import { NextRequest, NextResponse } from "next/server"
+import { getSessionCookie } from "better-auth/cookies"
 
 export async function middleware(request: NextRequest) {
-  const session = await auth.api.getSession({
-    headers: request.headers,
-  })
+  const sessionCookie = getSessionCookie(request)
 
-  const isAuthPage = request.nextUrl.pathname.startsWith('/sign-in') || request.nextUrl.pathname.startsWith('/sign-up')
-  const isDashboardPage = request.nextUrl.pathname.startsWith('/dashboard')
+  // Rotas protegidas que requerem autenticação
+  const protectedRoutes = ['/dashboard']
+  const isProtectedRoute = protectedRoutes.some(route => 
+    request.nextUrl.pathname.startsWith(route)
+  )
 
-  if (!session && isDashboardPage) {
+  // Rotas de autenticação que devem redirecionar se já autenticado
+  const authRoutes = ['/sign-in', '/sign-up']
+  const isAuthRoute = authRoutes.some(route => 
+    request.nextUrl.pathname.startsWith(route)
+  )
+
+  if (isProtectedRoute && !sessionCookie) {
     return NextResponse.redirect(new URL('/sign-in', request.url))
   }
 
-  if (session && isAuthPage) {
+  if (isAuthRoute && sessionCookie) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
@@ -22,5 +28,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    '/dashboard/:path*',
+    '/sign-in',
+    '/sign-up'
+  ]
 }
