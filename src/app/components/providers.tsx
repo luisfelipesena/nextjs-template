@@ -1,13 +1,9 @@
-"use client"
+'use client'
 
-import {
-  QueryCache,
-  QueryClient,
-  QueryClientProvider,
-} from "@tanstack/react-query"
-import { HTTPException } from "hono/http-exception"
-import { PropsWithChildren, useState } from "react"
-import { ClerkProvider } from "@clerk/nextjs"
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { HTTPException } from 'hono/http-exception'
+import { PropsWithChildren, useState } from 'react'
+
 export const Providers = ({ children }: PropsWithChildren) => {
   const [queryClient] = useState(
     () =>
@@ -22,9 +18,5 @@ export const Providers = ({ children }: PropsWithChildren) => {
       })
   )
 
-  return (
-    <ClerkProvider>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </ClerkProvider>
-  )
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }

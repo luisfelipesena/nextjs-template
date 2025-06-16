@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm info:*)",
+      "Bash(npm install:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(mkdir:*)",
+      "Bash(npm run:*)",
+      "Bash(npx better-auth generate:*)",
+      "Bash(npx tsc:*)",
+      "Bash(cp:*)",
+      "Bash(npx:*)",
+      "Bash(grep:*)"
+    ],
+    "deny": []
+  }
+}

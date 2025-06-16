@@ -1,0 +1,440 @@
+---
+description: Este documento estabelece as boas práticas e padrões arquiteturais para o desenvolvimento neste projeto Next.js com JStack, Better Auth e Drizzle ORM.
+globs: 
+alwaysApply: false
+---
+# Diretrizes de Desenvolvimento - Next.js Template
+
+## Visão Geral
+
+Este documento estabelece as boas práticas e padrões arquiteturais para o desenvolvimento neste projeto Next.js com JStack, Better Auth e Drizzle ORM.
+
+## Arquitetura do Projeto
+
+### Estrutura de Pastas
+
+```
+src/
+├── app/                    # App Router (Next.js 13+)
+│   ├── api/               # API Routes
+│   └── [pages]/           # Páginas da aplicação
+├── components/            # Componentes reutilizáveis
+│   └── ui/               # Componentes de UI (shadcn/ui)
+├── hooks/                 # Custom hooks
+├── lib/                   # Utilitários e configurações
+├── server/               # Lógica do servidor
+│   ├── db/               # Schema e configuração do banco
+│   └── routers/          # Routers do JStack
+└── types/                # Definições de tipos TypeScript
+```
+
+## Comunicação Backend-Frontend
+
+### 1. Camada de Hooks
+
+**✅ SEMPRE USE HOOKS para comunicação com APIs**
+
+```typescript
+// ❌ Não faça isso - fetch direto no componente
+export default function DashboardPage() {
+  const [data, setData] = useState(null)
+  
+  useEffect(() => {
+    fetch('/api/data').then(res => res.json()).then(setData)
+  }, [])
+  
+  return <div>{data?.name}</div>
+}
+
+// ✅ Faça isso - use hooks customizados
+export default function DashboardPage() {
+  const { data, loading, error } = useData()
+  
+  if (loading) return <Loading />
+  if (error) return <Error />
+  
+  return <div>{data?.name}</div>
+}
+```
+
+### 2. Padrão de Hooks Customizados
+
+Todos os hooks devem seguir este padrão:
+
+```typescript
+// src/hooks/use-[resource].ts
+import { useState, useEffect } from 'react'
+import { client } from '@/lib/client'
+import type { Resource } from '@/types'
+
+export function useResource() {
+  const [data, setData] = useState<Resource | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchData = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const result = await client.resource.get()
+      setData(result)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro desconhecido')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  return {
+    data,
+    loading,
+    error,
+    refetch: fetchData
+  }
+}
+```
+
+### 3. Tipagem Forte
+
+**✅ SEMPRE use tipos TypeScript para comunicação**
+
+```typescript
+// ❌ Evite tipos any
+const [user, setUser] = useState<any>(null)
+
+// ✅ Use tipos específicos
+const [user, setUser] = useState<User | null>(null)
+```
+
+### 4. JStack Client
+
+Use o client do JStack para todas as comunicações:
+
+```typescript
+// src/lib/client.ts
+import { createJStackClient } from '@jstack/client'
+import type { Router } from '@/server'
+
+export const client = createJStackClient<Router>({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+})
+```
+
+## Padrões de Autenticação
+
+### 1. Hook de Autenticação
+
+```typescript
+// src/hooks/use-auth.ts
+import { useState, useEffect } from 'react'
+import { authClient } from '@/lib/auth-client'
+import type { User } from 'better-auth/types'
+
+export function useAuth() {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchSession = async () => {
+      try {
+        const session = await authClient.getSession()
+        if (session?.data?.user) {
+          setUser(session.data.user)
+        } else {
+          setUser(null)
+        }
+      } catch (_error) {
+        setUser(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchSession()
+  }, [])
+
+  return { 
+    user, 
+    loading, 
+    isAuthenticated: !!user,
+    signOut: () => authClient.signOut()
+  }
+}
+```
+
+### 2. Páginas Protegidas
+
+```typescript
+// src/components/protected-route.tsx
+import { useAuth } from '@/hooks/use-auth'
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
+
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/sign-in')
+    }
+  }, [user, loading, router])
+
+  if (loading) return <Loading />
+  if (!user) return null
+
+  return <>{children}</>
+}
+```
+
+## Padrões de Banco de Dados
+
+### 1. Schema Definition
+
+```typescript
+// src/server/db/schema.ts
+import { pgTable, serial, text, timestamp, boolean } from 'drizzle-orm/pg-core'
+
+export const users = pgTable('users', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  name: text('name'),
+  emailVerified: boolean('email_verified').default(false),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+```
+
+### 2. Routers
+
+```typescript
+// src/server/routers/user-router.ts
+import { initJStack } from '@jstack/server'
+import { z } from 'zod'
+import { db } from '../db'
+import { users } from '../db/schema'
+
+const j = initJStack()
+
+export const userRouter = j.router({
+  getProfile: j.procedure
+    .input(z.object({ userId: z.string() }))
+    .query(async ({ input }) => {
+      return await db.select().from(users).where(eq(users.id, input.userId))
+    }),
+})
+```
+
+## Padrões de Componentes
+
+### 1. Componentes de Página
+
+```typescript
+// src/app/dashboard/page.tsx
+'use client'
+
+import { useAuth } from '@/hooks/use-auth'
+import { ProtectedRoute } from '@/components/protected-route'
+
+export default function DashboardPage() {
+  const { user } = useAuth()
+
+  return (
+    <ProtectedRoute>
+      <div className="p-4">
+        <h1>Dashboard</h1>
+        <p>Bem-vindo, {user?.name}</p>
+      </div>
+    </ProtectedRoute>
+  )
+}
+```
+
+### 2. Componentes Reutilizáveis
+
+```typescript
+// src/components/user-profile.tsx
+import { useAuth } from '@/hooks/use-auth'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+
+export function UserProfile() {
+  const { user, loading } = useAuth()
+
+  if (loading) return <div>Carregando...</div>
+  if (!user) return null
+
+  return (
+    <div className="flex items-center gap-2">
+      <Avatar>
+        <AvatarImage src={user.image} />
+        <AvatarFallback>{user.name?.[0]}</AvatarFallback>
+      </Avatar>
+      <span>{user.name}</span>
+    </div>
+  )
+}
+```
+
+## Tratamento de Erros
+
+### 1. Hook de Erro Global
+
+```typescript
+// src/hooks/use-error.ts
+import { useState } from 'react'
+import { toast } from 'sonner'
+
+export function useError() {
+  const [error, setError] = useState<string | null>(null)
+
+  const handleError = (err: unknown) => {
+    const message = err instanceof Error ? err.message : 'Erro desconhecido'
+    setError(message)
+    toast.error(message)
+  }
+
+  const clearError = () => setError(null)
+
+  return { error, handleError, clearError }
+}
+```
+
+### 2. Boundary de Erro
+
+```typescript
+// src/components/error-boundary.tsx
+'use client'
+
+import { useEffect } from 'react'
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string }
+  reset: () => void
+}) {
+  useEffect(() => {
+    console.error(error)
+  }, [error])
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[400px]">
+      <h2 className="text-2xl font-bold mb-4">Algo deu errado!</h2>
+      <button
+        onClick={reset}
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+      >
+        Tentar novamente
+      </button>
+    </div>
+  )
+}
+```
+
+## Regras de Clean Code
+
+### 1. Nomenclatura
+
+- **Hooks**: `use[Resource]` (ex: `useAuth`, `usePost`)
+- **Componentes**: `PascalCase` (ex: `UserProfile`, `PostCard`)
+- **Funções**: `camelCase` (ex: `fetchUserData`, `handleSubmit`)
+- **Constantes**: `UPPER_SNAKE_CASE` (ex: `API_BASE_URL`)
+
+### 2. Organização de Imports
+
+```typescript
+// 1. Imports de bibliotecas externas
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
+// 2. Imports internos
+import { client } from '@/lib/client'
+import { Button } from '@/components/ui/button'
+
+// 3. Imports de tipos
+import type { User } from '@/types'
+```
+
+### 3. Responsabilidade Única
+
+Cada hook deve ter uma responsabilidade única:
+
+```typescript
+// ❌ Hook muito amplo
+export function useApp() {
+  // lógica de autenticação
+  // lógica de posts
+  // lógica de perfil
+}
+
+// ✅ Hooks específicos
+export function useAuth() { /* apenas autenticação */ }
+export function usePosts() { /* apenas posts */ }
+export function useProfile() { /* apenas perfil */ }
+```
+
+## Configuração de Ambiente
+
+### 1. Variáveis de Ambiente
+
+```env
+# .env.local
+NEXT_PUBLIC_API_URL=http://localhost:3000
+BETTER_AUTH_SECRET=your-secret-key
+DATABASE_URL=postgresql://user:pass@localhost:5432/db
+```
+
+### 2. Validação de Ambiente
+
+```typescript
+// src/env.ts
+import { z } from 'zod'
+
+const envSchema = z.object({
+  NEXT_PUBLIC_API_URL: z.string().url(),
+  BETTER_AUTH_SECRET: z.string().min(32),
+  DATABASE_URL: z.string().url(),
+})
+
+export const env = envSchema.parse(process.env)
+```
+
+## Comandos Úteis
+
+```bash
+# Desenvolvimento
+npm run dev
+
+# Build
+npm run build
+
+# Lint
+npm run lint
+
+# Tipo checking
+npm run type-check
+
+# Migrations
+npm run db:generate
+npm run db:migrate
+```
+
+## Checklist de PR
+
+- [ ] Todos os hooks seguem o padrão estabelecido
+- [ ] Componentes não fazem fetch direto de APIs
+- [ ] Tipos TypeScript estão definidos
+- [ ] Tratamento de erro implementado
+- [ ] Testes unitários (se aplicável)
+- [ ] Documentação atualizada
+- [ ] Lint passa sem erros
+- [ ] Build passa sem erros
+
+---
+
+**Lembre-se**: Sempre prefira a composição ao invés de herança, mantenha os componentes pequenos e focados, e use hooks para separar a lógica de negócio da apresentação.
