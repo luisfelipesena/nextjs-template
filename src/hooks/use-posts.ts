@@ -8,7 +8,11 @@ interface CreatePostInput {
 export function usePosts() {
   const queryClient = useQueryClient()
 
-  const { data: recentPost, isPending: loading, error } = useQuery({
+  const {
+    data: recentPost,
+    isPending: loading,
+    error,
+  } = useQuery({
     queryKey: ['get-recent-post'],
     queryFn: async () => {
       const res = await client.post.recent.$get()

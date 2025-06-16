@@ -20,7 +20,11 @@ export default function SignInPage() {
   const router = useRouter()
   const { signIn, isSigningIn } = useAuth()
 
-  const { register, handleSubmit, formState: { errors } } = useForm<SignInForm>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<SignInForm>({
     resolver: zodResolver(signInSchema),
     defaultValues: {
       email: '',
@@ -65,9 +69,7 @@ export default function SignInPage() {
                 {...register('email')}
                 className='w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary'
               />
-              {errors.email && (
-                <p className='text-sm text-destructive'>{errors.email.message}</p>
-              )}
+              {errors.email && <p className='text-sm text-destructive'>{errors.email.message}</p>}
             </div>
 
             <div className='space-y-2'>
@@ -80,9 +82,7 @@ export default function SignInPage() {
                 {...register('password')}
                 className='w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary'
               />
-              {errors.password && (
-                <p className='text-sm text-destructive'>{errors.password.message}</p>
-              )}
+              {errors.password && <p className='text-sm text-destructive'>{errors.password.message}</p>}
             </div>
 
             {error && <p className='text-destructive text-sm'>{error}</p>}

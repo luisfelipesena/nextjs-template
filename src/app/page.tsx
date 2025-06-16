@@ -19,7 +19,12 @@ export default function HomePage() {
   const { loading: authLoading, isAuthenticated } = useAuth()
   const { recentPost, loading: postsLoading, createPostAsync, isCreating } = usePosts()
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<NoteForm>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<NoteForm>({
     resolver: zodResolver(noteSchema),
     defaultValues: {
       content: '',
@@ -56,14 +61,8 @@ export default function HomePage() {
       <div className='w-full max-w-lg space-y-6'>
         <form onSubmit={handleSubmit(onSubmit)} className='flex gap-2'>
           <div className='flex-1'>
-            <Input
-              {...register('content')}
-              placeholder='Write a note...'
-              className='flex-1'
-            />
-            {errors.content && (
-              <p className='text-sm text-destructive mt-1'>{errors.content.message}</p>
-            )}
+            <Input {...register('content')} placeholder='Write a note...' className='flex-1' />
+            {errors.content && <p className='text-sm text-destructive mt-1'>{errors.content.message}</p>}
           </div>
           <Button type='submit' disabled={isCreating}>
             {isCreating ? 'Adding...' : 'Add Note'}

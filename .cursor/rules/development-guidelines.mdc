@@ -457,6 +457,290 @@ export default function Error({
 }
 ```
 
+### 3. Error Handler Global no JStack
+
+**✅ SEMPRE IMPLEMENTE logging global de erros no router principal**
+
+```typescript
+// src/server/index.ts
+import { createTransactionLogger } from '@/lib/logger'
+import { HTTPException } from 'hono/http-exception'
+
+const globalErrorHandler = (err: Error, c: any) => {
+  const transactionId = c.get('transactionId') || crypto.randomUUID()
+  const logger = c.get('logger') || createTransactionLogger(transactionId)
+  
+  const errorContext = {
+    error: err.message,
+    stack: err.stack,
+    path: c.req.path,
+    method: c.req.method,
+    userAgent: c.req.header('user-agent'),
+    ip: c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown',
+    transactionId,
+  }
+
+  if (err instanceof HTTPException) {
+    if (err.status >= 500) {
+      logger.error(errorContext, 'Internal server error')
+    } else if (err.status >= 400) {
+      logger.warn(errorContext, 'Client error')
+    }
+  } else {
+    logger.error(errorContext, 'Unhandled error occurred')
+  }
+
+  return j.defaults.errorHandler(err)
+}
+
+const api = j.router()
+  .basePath('/api')
+  .use(j.defaults.cors)
+  .use(rateLimitMiddleware)
+  .onError(globalErrorHandler)
+```
+
+## Rate Limiting e Redis
+
+### 1. Configuração Redis com Upstash
+
+**✅ SEMPRE USE Upstash Redis para production**
+
+```typescript
+// src/lib/redis.ts
+import { Redis } from '@upstash/redis'
+import { Ratelimit } from '@upstash/ratelimit'
+import { env } from '@/env'
+
+export const redis = new Redis({
+  url: env.UPSTASH_REDIS_REST_URL,
+  token: env.UPSTASH_REDIS_REST_TOKEN,
+})
+
+// Rate limits específicos por tipo de endpoint
+export const ratelimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(100, '1 h'), // Geral
+  analytics: true,
+  prefix: 'ratelimit',
+})
+
+export const authRatelimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(5, '15 m'), // Auth restritivo
+  analytics: true,
+  prefix: 'auth_ratelimit',
+})
+
+export const apiRatelimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(200, '1 h'), // API elevado
+  analytics: true,
+  prefix: 'api_ratelimit',
+})
+```
+
+### 2. Middleware de Rate Limiting
+
+**✅ SEMPRE IMPLEMENTE rate limiting granular**
+
+```typescript
+// src/lib/rate-limit-middleware.ts
+import { createRateLimitMiddleware } from '@/lib/rate-limit-middleware'
+
+// Para diferentes tipos de endpoints
+const authMiddleware = createRateLimitMiddleware({ type: 'auth' })
+const apiMiddleware = createRateLimitMiddleware({ type: 'api' })
+const generalMiddleware = createRateLimitMiddleware({ type: 'general' })
+
+// Com identificador customizado
+const userBasedRateLimit = createRateLimitMiddleware({
+  type: 'api',
+  identifier: async (c) => {
+    const userId = c.get('userId')
+    return userId || getClientIP(c.req.raw)
+  }
+})
+```
+
+### 3. Best Practices para Rate Limiting
+
+- **Auth endpoints**: 5 requests / 15 minutos (muito restritivo)
+- **Public API**: 100 requests / hora (moderado)
+- **Internal API**: 200 requests / hora (elevado)
+- **User-based**: Preferir user ID quando disponível, fallback para IP
+- **Headers informativos**: Sempre incluir X-RateLimit-* headers
+- **Graceful degradation**: Mensagens claras e Retry-After headers
+
+## Logging e Observabilidade
+
+### 1. Sistema de Logging com Pino
+
+**✅ SEMPRE USE pino com transaction IDs para rastreamento**
+
+```typescript
+// src/lib/logger.ts
+import pino from 'pino'
+import { v4 as uuidv4 } from 'uuid'
+
+export const logger = pino({
+  level: process.env.LOG_LEVEL || 'info',
+  ...(isDevelopment && {
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'yyyy-mm-dd HH:MM:ss',
+        ignore: 'pid,hostname',
+        messageFormat: '[{transactionId}] {msg}',
+      },
+    },
+  }),
+})
+
+export const createTransactionLogger = (transactionId?: string) => {
+  const txId = transactionId || uuidv4()
+  return logger.child({ transactionId: txId })
+}
+```
+
+### 2. Transaction ID em Todas as Requisições
+
+**✅ SEMPRE INJETE transaction ID no contexto**
+
+```typescript
+// No middleware de rate limiting ou middleware dedicado
+const transactionId = c.req.header('x-transaction-id') || crypto.randomUUID()
+const logger = createTransactionLogger(transactionId)
+
+c.set('transactionId', transactionId)
+c.set('logger', logger)
+c.header('X-Transaction-ID', transactionId)
+```
+
+### 3. Estrutura de Logs Padronizada
+
+```typescript
+// Logs estruturados para melhor parsing
+logger.info({
+  method: c.req.method,
+  path: c.req.path,
+  ip: clientIP,
+  userAgent: c.req.header('user-agent'),
+  userId: c.get('userId'),
+}, 'Request processed')
+
+logger.error({
+  error: err.message,
+  stack: err.stack,
+  path: c.req.path,
+  method: c.req.method,
+  transactionId,
+}, 'Error occurred')
+```
+
+### 4. Log Levels e Ambientes
+
+- **Development**: Pretty-printed logs com cores
+- **Production**: JSON estruturado para parsing
+- **Levels**: error (erros), warn (avisos), info (informações), debug (debug)
+- **Context**: Sempre incluir informações relevantes (user, IP, path, method)
+
+## Configuração de Ambiente
+
+### 1. Variáveis de Ambiente
+
+```env
+# Redis (Upstash)
+UPSTASH_REDIS_REST_URL=https://your-redis-url.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your-redis-token
+
+# Rate Limiting
+RATE_LIMIT_REQUESTS=100
+RATE_LIMIT_WINDOW=1 h
+
+# Logging
+LOG_LEVEL=info
+NODE_ENV=development
+
+# Database
+DATABASE_URL=postgresql://user:pass@localhost:5432/db
+
+# Authentication
+BETTER_AUTH_SECRET=your-secret-key-32-chars-minimum
+NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000
+```
+
+### 2. Validação de Ambiente
+
+```typescript
+// src/env.ts
+export const env = {
+  DATABASE_URL: process.env.DATABASE_URL ?? '',
+  BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? '',
+  NEXT_PUBLIC_BETTER_AUTH_URL: process.env.NEXT_PUBLIC_BETTER_AUTH_URL ?? 'http://localhost:3000',
+  UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL ?? '',
+  UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN ?? '',
+  RATE_LIMIT_REQUESTS: Number(process.env.RATE_LIMIT_REQUESTS) || 100,
+  RATE_LIMIT_WINDOW: process.env.RATE_LIMIT_WINDOW ?? '1 h',
+}
+```
+
+## Monitoramento e Analytics
+
+### 1. Rate Limit Analytics
+
+- **Upstash Analytics**: Habilitado por padrão nos rate limiters
+- **Patterns**: Monitorar padrões de tráfego por IP/usuário
+- **Alerts**: Configurar alertas para rate limit hits elevados
+- **Redis Metrics**: Monitorar uso e performance do Redis
+
+### 2. Log Analysis
+
+```bash
+# Development - busca por transaction ID
+grep "transaction-id-here" logs.txt
+
+# Production - parsing de logs JSON
+jq '.transactionId == "transaction-id-here"' logs.jsonl
+
+# Error patterns
+jq 'select(.level == "error")' logs.jsonl | jq '.error' | sort | uniq -c
+```
+
+### 3. Error Tracking
+
+- **Transaction IDs**: Para rastrear requisições completas
+- **Error Context**: Stack, path, method, user, IP
+- **Error Classification**: HTTP status codes, tipos de erro
+- **Error Frequency**: Monitorar padrões e spikes
+
+## Troubleshooting
+
+### Rate Limiting Issues
+
+1. **Rate limit não funciona**:
+   - Verificar conexão Redis
+   - Confirmar variáveis de ambiente
+   - Verificar ordem dos middlewares
+
+2. **Alto uso do Redis**:
+   - Revisar janelas de rate limit
+   - Verificar tráfego de bots
+   - Implementar rate limiting baseado em usuário
+
+### Logging Issues
+
+1. **Logs ausentes**:
+   - Verificar LOG_LEVEL
+   - Confirmar registro dos middlewares
+   - Verificar geração de transaction IDs
+
+2. **Performance de logs**:
+   - Usar pino-pretty apenas em development
+   - Configurar log rotation em production
+   - Monitorar volume de logs
+
 ## Regras de Clean Code
 
 ### 1. Nomenclatura
@@ -499,32 +783,6 @@ export function usePosts() { /* apenas posts */ }
 export function useProfile() { /* apenas perfil */ }
 ```
 
-## Configuração de Ambiente
-
-### 1. Variáveis de Ambiente
-
-```env
-# .env.local
-NEXT_PUBLIC_API_URL=http://localhost:3000
-BETTER_AUTH_SECRET=your-secret-key
-DATABASE_URL=postgresql://user:pass@localhost:5432/db
-```
-
-### 2. Validação de Ambiente
-
-```typescript
-// src/env.ts
-import { z } from 'zod'
-
-const envSchema = z.object({
-  NEXT_PUBLIC_API_URL: z.string().url(),
-  BETTER_AUTH_SECRET: z.string().min(32),
-  DATABASE_URL: z.string().url(),
-})
-
-export const env = envSchema.parse(process.env)
-```
-
 ## Comandos Úteis
 
 ```bash
@@ -559,6 +817,14 @@ npm run db:migrate
 - [ ] Tratamento de erro implementado
 - [ ] Loading states gerenciados pelo React Query
 - [ ] Estados de formulário gerenciados pelo React Hook Form
+- [ ] **Rate limiting implementado nos endpoints apropriados**
+- [ ] **Error handler global configurado no router principal**
+- [ ] **Transaction IDs implementados para rastreamento**
+- [ ] **Logs estruturados com contexto adequado**
+- [ ] **Redis configurado para rate limiting (Upstash)**
+- [ ] **Variáveis de ambiente validadas**
+- [ ] **Headers de rate limit incluídos nas respostas**
+- [ ] **Logging de erros com stack trace e contexto**
 - [ ] Testes unitários (se aplicável)
 - [ ] Documentação atualizada
 - [ ] Lint passa sem erros

@@ -28,11 +28,7 @@ export default function DashboardPage() {
     <div className='p-4'>
       <div className='flex items-center justify-between'>
         <h1 className='text-2xl font-bold'>Dashboard</h1>
-        <Button 
-          onClick={handleSignOut} 
-          variant='outline'
-          disabled={isSigningOut}
-        >
+        <Button onClick={handleSignOut} variant='outline' disabled={isSigningOut}>
           {isSigningOut ? 'Signing out...' : 'Sign Out'}
         </Button>
       </div>

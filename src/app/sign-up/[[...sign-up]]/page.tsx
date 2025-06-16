@@ -8,15 +8,17 @@ import { z } from 'zod'
 import { useAuth } from '@/hooks/use-auth'
 import { useState } from 'react'
 
-const signUpSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Please enter a valid email'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: 'Passwords do not match',
-  path: ['confirmPassword'],
-})
+const signUpSchema = z
+  .object({
+    name: z.string().min(2, 'Name must be at least 2 characters'),
+    email: z.string().email('Please enter a valid email'),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
 
 type SignUpForm = z.infer<typeof signUpSchema>
 
@@ -25,7 +27,11 @@ export default function SignUpPage() {
   const router = useRouter()
   const { signUp, isSigningUp } = useAuth()
 
-  const { register, handleSubmit, formState: { errors } } = useForm<SignUpForm>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<SignUpForm>({
     resolver: zodResolver(signUpSchema),
     defaultValues: {
       name: '',
@@ -38,7 +44,7 @@ export default function SignUpPage() {
   const onSubmit = (data: SignUpForm) => {
     setError(null)
     const { confirmPassword, ...signUpData } = data
-    
+
     signUp(signUpData, {
       onSuccess: () => {
         router.push('/dashboard')
@@ -74,9 +80,7 @@ export default function SignUpPage() {
                 {...register('name')}
                 className='w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary'
               />
-              {errors.name && (
-                <p className='text-sm text-destructive'>{errors.name.message}</p>
-              )}
+              {errors.name && <p className='text-sm text-destructive'>{errors.name.message}</p>}
             </div>
 
             <div className='space-y-2'>
@@ -89,9 +93,7 @@ export default function SignUpPage() {
                 {...register('email')}
                 className='w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary'
               />
-              {errors.email && (
-                <p className='text-sm text-destructive'>{errors.email.message}</p>
-              )}
+              {errors.email && <p className='text-sm text-destructive'>{errors.email.message}</p>}
             </div>
 
             <div className='space-y-2'>
@@ -104,9 +106,7 @@ export default function SignUpPage() {
                 {...register('password')}
                 className='w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary'
               />
-              {errors.password && (
-                <p className='text-sm text-destructive'>{errors.password.message}</p>
-              )}
+              {errors.password && <p className='text-sm text-destructive'>{errors.password.message}</p>}
             </div>
 
             <div className='space-y-2'>
@@ -119,9 +119,7 @@ export default function SignUpPage() {
                 {...register('confirmPassword')}
                 className='w-full px-3 py-2 bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary'
               />
-              {errors.confirmPassword && (
-                <p className='text-sm text-destructive'>{errors.confirmPassword.message}</p>
-              )}
+              {errors.confirmPassword && <p className='text-sm text-destructive'>{errors.confirmPassword.message}</p>}
             </div>
 
             {error && <p className='text-destructive text-sm'>{error}</p>}
